@@ -8,66 +8,75 @@ export const config = {
 import { NextResponse } from "next/server";
 import path from "path";
 import { writeFile } from "fs/promises";
+import fs from "fs";
 import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
+import { uploadToCloudinary } from "@/lib/uploadToCloudinary";
 
 export async function POST(req: Request) {
   try {
-    console.log("hree")
+    console.log("API Hit");
     await connectDB();
 
     const formData = await req.formData();
 
     const dataValue = formData.get("data");
-    console.log("dataValue: ",dataValue);
-
     if (!dataValue || typeof dataValue !== "string") {
       return NextResponse.json(
-        { success: false, message: "Invalid data" },
+        { success: false, message: "Invalid data received" },
         { status: 400 }
       );
     }
 
     const jsonData = JSON.parse(dataValue);
-    console.log("jsonData: ",jsonData);
 
+    // ✅ EMAIL VALIDATION BEFORE UPLOADING FILES
+    const existingUser = await User.findOne({ email: jsonData.email });
+    if (existingUser) {
+      return NextResponse.json(
+        { success: false, message: "Email already exists!" },
+        { status: 409 }
+      );
+    }
 
     const files = formData.getAll("files") as File[];
-    console.log("files: ",files);
-
-    const uploadedDocs = [];
+    const uploadedDocs: any[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-
       if (!file) continue;
 
+      // Convert to buffer for temp upload
       const buffer = Buffer.from(await file.arrayBuffer());
       const fileName = `${Date.now()}-${file.name}`;
 
-      const uploadPath = path.join(
-        process.cwd(),
-        "public",
-        "uploads",
-        fileName
-      );
+      // TEMP LOCAL UPLOAD
+      const tempPath = path.join(process.cwd(), "public", "uploads", fileName);
+      await writeFile(tempPath, buffer);
 
-      await writeFile(uploadPath, buffer);
+      // Upload to Cloudinary
+      const cloudUrl = await uploadToCloudinary(tempPath, "user_uploads");
 
       uploadedDocs.push({
         fileName: jsonData.documents[i].fileName,
         fileType: jsonData.documents[i].fileType,
-        fileUrl: `/uploads/${fileName}`,
+        fileUrl: cloudUrl,
       });
+
+      // Delete local file
+      if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
     }
 
+    // Save final user
     const newUser = await User.create({
       ...jsonData,
       documents: uploadedDocs,
     });
 
     return NextResponse.json(
-      { success: true, message: "User registered", data: newUser },
+      { success: true, message: "User registered successfully", data: newUser },
       { status: 200 }
     );
   } catch (err) {

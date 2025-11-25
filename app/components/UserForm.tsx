@@ -6,6 +6,7 @@ import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
 import axios from "axios";
 import { Plus } from "lucide-react";
+import { toast } from "react-toastify";
 
 type Document = {
   fileName: string;
@@ -114,6 +115,7 @@ export default function UserForm() {
     watch,
     setValue,
     formState: { errors },
+    reset
   } = useForm<FormValues>({
     resolver: async (values, context, options) => {
       const result = await yupResolver(schema)(
@@ -215,14 +217,21 @@ const onSubmit = async (data: FormValues) => {
     console.log("API Response:", res.data);
 
     if (res.data.success) {
-      alert("Registered successfully!");
+      toast.success("User registered!");
+      reset()
     } else {
-      alert("Registration failed!");
+      toast.error("Registration failed!");
     }
   } catch (error) {
-    console.error("Error submitting:", error);
-    alert("Something went wrong!");
-  } finally {
+  let message = "Something went wrong";
+
+  if (axios.isAxiosError(error)) {
+    message = error.response?.data?.message || message;
+  }
+
+  toast.error(message);
+}
+   finally {
     setLoading(false); 
   }
 };
